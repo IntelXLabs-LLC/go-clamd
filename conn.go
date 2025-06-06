@@ -23,6 +23,8 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 */
 
+// Package clamd provides a client for the ClamAV daemon (clamd).
+// This file contains the connection handling code for communicating with the ClamAV daemon.
 package clamd
 
 import (
@@ -37,17 +39,27 @@ import (
 	"time"
 )
 
+// CHUNK_SIZE is the size of the chunks used when sending data to the ClamAV daemon.
 const CHUNK_SIZE = 1024
+
+// TCP_TIMEOUT is the timeout for TCP connections to the ClamAV daemon.
 const TCP_TIMEOUT = time.Second * 2
 
+// resultRegex is a regular expression used to parse the response from the ClamAV daemon.
+// It extracts the path, description, virus hash, virus size, and status from the response.
 var resultRegex = regexp.MustCompile(
 	`^(?P<path>[^:]+): ((?P<desc>[^:]+)(\((?P<virhash>([^:]+)):(?P<virsize>\d+)\))? )?(?P<status>FOUND|ERROR|OK)$`,
 )
 
+// CLAMDConn represents a connection to the ClamAV daemon.
+// It embeds net.Conn to provide the basic connection functionality.
 type CLAMDConn struct {
 	net.Conn
 }
 
+// sendCommand sends a command to the ClamAV daemon.
+// It formats the command with a newline and sends it over the connection.
+// Returns an error if any occurred.
 func (conn *CLAMDConn) sendCommand(command string) error {
 	commandBytes := []byte(fmt.Sprintf("n%s\n", command))
 
@@ -55,11 +67,17 @@ func (conn *CLAMDConn) sendCommand(command string) error {
 	return err
 }
 
+// sendEOF sends an EOF (end of file) marker to the ClamAV daemon.
+// This is used to terminate a stream of data.
+// Returns an error if any occurred.
 func (conn *CLAMDConn) sendEOF() error {
 	_, err := conn.Write([]byte{0, 0, 0, 0})
 	return err
 }
 
+// sendChunk sends a chunk of data to the ClamAV daemon.
+// It prepends the data with a 4-byte length header in network byte order.
+// Returns an error if any occurred.
 func (conn *CLAMDConn) sendChunk(data []byte) error {
 	var buf [4]byte
 	lenData := len(data)
@@ -81,6 +99,9 @@ func (conn *CLAMDConn) sendChunk(data []byte) error {
 	return err
 }
 
+// readResponse reads the response from the ClamAV daemon.
+// It returns a channel of ScanResults, a WaitGroup that will be done when the response is complete,
+// and an error if any occurred.
 func (c *CLAMDConn) readResponse() (chan *ScanResult, *sync.WaitGroup, error) {
 	var wg sync.WaitGroup
 
@@ -112,6 +133,9 @@ func (c *CLAMDConn) readResponse() (chan *ScanResult, *sync.WaitGroup, error) {
 	return ch, &wg, nil
 }
 
+// parseResult parses a line of response from the ClamAV daemon into a ScanResult.
+// It uses the resultRegex to extract the path, description, virus hash, virus size, and status.
+// Returns a ScanResult containing the parsed information.
 func parseResult(line string) *ScanResult {
 	res := &ScanResult{}
 	res.Raw = line
@@ -154,6 +178,9 @@ func parseResult(line string) *ScanResult {
 	return res
 }
 
+// newCLAMDTcpConn creates a new TCP connection to the ClamAV daemon.
+// It dials the specified address with a timeout.
+// Returns a CLAMDConn and an error if any occurred.
 func newCLAMDTcpConn(address string) (*CLAMDConn, error) {
 	conn, err := net.DialTimeout("tcp", address, TCP_TIMEOUT)
 
@@ -168,6 +195,9 @@ func newCLAMDTcpConn(address string) (*CLAMDConn, error) {
 	return &CLAMDConn{Conn: conn}, err
 }
 
+// newCLAMDUnixConn creates a new Unix socket connection to the ClamAV daemon.
+// It dials the specified Unix socket path.
+// Returns a CLAMDConn and an error if any occurred.
 func newCLAMDUnixConn(address string) (*CLAMDConn, error) {
 	conn, err := net.Dial("unix", address)
 	if err != nil {
